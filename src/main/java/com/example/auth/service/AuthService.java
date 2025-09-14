@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -186,10 +187,16 @@ public class AuthService {
      * @param userId the user ID
      */
     public void revokeAllUserTokens(UUID userId) {
-        // This would require additional Redis operations to find all user tokens
-        // Implementation depends on whether we want to track all user tokens
         logger.info("Revoking all tokens for user: {}", userId);
-        // TODO: Implement if needed for security features
+        Set<String> keys = tokenService.getAllRefreshTokenKeys();
+        for (String key : keys) {
+            Optional<TokenService.RefreshTokenData> tokenDataOpt = tokenService.getRefreshTokenDataByKey(key);
+            if (tokenDataOpt.isPresent() && userId.equals(tokenDataOpt.get().getUserId())) {
+                tokenService.deleteRefreshTokenByKey(key);
+                logger.debug("Revoked refresh token: {} for user: {}", key, userId);
+            }
+        }
+        logger.info("All refresh tokens revoked for user: {}", userId);
     }
 
     /**

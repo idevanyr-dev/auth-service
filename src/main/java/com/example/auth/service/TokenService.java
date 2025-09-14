@@ -32,6 +32,34 @@ import java.util.stream.Collectors;
  */
 @Service
 public class TokenService {
+    /**
+     * Busca todas as chaves de refresh tokens no Redis.
+     */
+    public Set<String> getAllRefreshTokenKeys() {
+        Set<String> keys = redisTemplate.keys(REFRESH_TOKEN_PREFIX + "*");
+        return keys != null ? keys : Collections.emptySet();
+    }
+
+    /**
+     * Busca os dados de um refresh token pelo Redis key.
+     */
+    public Optional<RefreshTokenData> getRefreshTokenDataByKey(String key) {
+        String tokenDataJson = redisTemplate.opsForValue().get(key);
+        if (tokenDataJson == null) return Optional.empty();
+        try {
+            RefreshTokenData tokenData = objectMapper.readValue(tokenDataJson, RefreshTokenData.class);
+            return Optional.of(tokenData);
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Remove um refresh token pelo Redis key.
+     */
+    public void deleteRefreshTokenByKey(String key) {
+        redisTemplate.delete(key);
+    }
 
     private static final Logger logger = LoggerFactory.getLogger(TokenService.class);
     private static final String REFRESH_TOKEN_PREFIX = "refresh:";
@@ -124,29 +152,28 @@ public class TokenService {
      * Contains user claims, roles, and permissions.
      */
     public String generateAccessToken(User user) {
-        Instant now = Instant.now();
-        Instant expiration = now.plus(accessTokenTtlSeconds, ChronoUnit.SECONDS);
-        
-        // Extract roles and permissions
-        Set<String> roles = user.getRoles().stream()
-                .map(Role::getName)
-                .collect(Collectors.toSet());
-                
-        Set<String> permissions = user.getAllPermissions().stream()
-                .map(Permission::getName)
-                .collect(Collectors.toSet());
+    Instant now = Instant.now();
+    Instant expiration = now.plus(accessTokenTtlSeconds, ChronoUnit.SECONDS);
 
-        return Jwts.builder()
-                .setSubject(user.getId().toString())
-                .setIssuedAt(Date.from(now))
-                .setExpiration(Date.from(expiration))
-                .setId(UUID.randomUUID().toString()) // jti for blacklist
-                .claim("username", user.getUsername())
-                .claim("roles", roles)
-                .claim("permissions", permissions)
-                .claim("enabled", user.getEnabled())
-                .signWith(privateKey, SignatureAlgorithm.RS256)
-                .compact();
+    Set<String> roles = user.getRoles().stream()
+        .map(Role::getName)
+        .collect(Collectors.toSet());
+
+    Set<String> permissions = user.getAllPermissions().stream()
+        .map(Permission::getName)
+        .collect(Collectors.toSet());
+
+    return Jwts.builder()
+        .subject(user.getId().toString())
+        .issuedAt(Date.from(now))
+        .expiration(Date.from(expiration))
+        .id(UUID.randomUUID().toString())
+        .claim("username", user.getUsername())
+        .claim("roles", roles)
+        .claim("permissions", permissions)
+        .claim("enabled", user.getEnabled())
+        .signWith(privateKey, Jwts.SIG.RS256)
+        .compact();
     }
 
     /**
@@ -195,14 +222,12 @@ public class TokenService {
                     .verifyWith(publicKey)
                     .build()
                     .parseSignedClaims(token);
-                    
-            // Check if token is blacklisted
-            String jti = claims.getBody().getId();
+
+            String jti = claims.getPayload().getId();
             if (jti != null && isTokenBlacklisted(jti)) {
                 logger.warn("Access token is blacklisted: {}", jti);
                 return false;
             }
-            
             return true;
         } catch (JwtException | IllegalArgumentException e) {
             logger.debug("Invalid access token: {}", e.getMessage());
@@ -219,8 +244,8 @@ public class TokenService {
                     .verifyWith(publicKey)
                     .build()
                     .parseSignedClaims(token);
-                    
-            String subject = claims.getBody().getSubject();
+
+            String subject = claims.getPayload().getSubject();
             return Optional.of(UUID.fromString(subject));
         } catch (JwtException | IllegalArgumentException e) {
             logger.debug("Failed to parse user ID from token: {}", e.getMessage());
@@ -237,8 +262,8 @@ public class TokenService {
                     .verifyWith(publicKey)
                     .build()
                     .parseSignedClaims(token);
-                    
-            return Optional.of(claims.getBody());
+
+            return Optional.of(claims.getPayload());
         } catch (JwtException | IllegalArgumentException e) {
             logger.debug("Failed to parse claims from token: {}", e.getMessage());
             return Optional.empty();
@@ -316,13 +341,12 @@ public class TokenService {
                     .verifyWith(publicKey)
                     .build()
                     .parseSignedClaims(token);
-                    
-            String jti = claims.getBody().getId();
-            Date expiration = claims.getBody().getExpiration();
-            
+
+            String jti = claims.getPayload().getId();
+            Date expiration = claims.getPayload().getExpiration();
+
             if (jti != null && expiration != null) {
                 long ttl = Math.max(0, expiration.getTime() - System.currentTimeMillis()) / 1000;
-                
                 if (ttl > 0) {
                     String blacklistKey = BLACKLIST_PREFIX + jti;
                     redisTemplate.opsForValue().set(blacklistKey, "true", ttl, TimeUnit.SECONDS);
