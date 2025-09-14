@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: auth-service
+  config:
+    # Importa .env (formato key=value) como propriedades do Spring, se existir
+    # Referência: Spring Boot Config Data API
+    import: optional:file:.env[.properties]
+  
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/authdb}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASS:postgres}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: ${JPA_SHOW_SQL:false}
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    timeout: 2000ms
+    lettuce:
+      pool:
+        max-active: 10
+        max-idle: 10
+        min-idle: 1
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /api
+
+security:
+  jwt:
+    # Chaves RSA em Base64 ou diretamente via variáveis de ambiente
+    private-key: ${JWT_PRIVATE_KEY:}
+    public-key: ${JWT_PUBLIC_KEY:}
+    # Alternativa: carregar chaves a partir de arquivos PEM/Base64
+    private-key-file: ${JWT_PRIVATE_KEY_FILE:}
+    public-key-file: ${JWT_PUBLIC_KEY_FILE:}
+    access-token-ttl-seconds: ${JWT_ACCESS_TTL:600}  # 10 minutos
+    refresh-token-ttl-seconds: ${JWT_REFRESH_TTL:604800}  # 7 dias
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+    com.example.auth: ${LOG_LEVEL_APP:DEBUG}
+    org.springframework.security: ${LOG_LEVEL_SECURITY:INFO}
